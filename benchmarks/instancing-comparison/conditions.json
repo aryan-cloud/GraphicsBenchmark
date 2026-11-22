@@ -1,0 +1,33 @@
+{
+  "power": [
+    1,
+    0
+  ],
+  "scheme": "Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)",
+  "render_adapter": "NVIDIA GeForce RTX 3060 Laptop GPU",
+  "client_size": [
+    1280,
+    720
+  ],
+  "warmup": 120,
+  "samples_per_run": 600,
+  "vsync": 0,
+  "present_flags": 512,
+  "swap_chain_flags": 2048,
+  "diagnostics": true,
+  "paired_order": [
+    "separate/instanced",
+    "instanced/separate",
+    "separate/instanced"
+  ],
+  "monitor": [
+    "\\\\.\\DISPLAY1",
+    60
+  ],
+  "client_rect": [
+    34,
+    57,
+    1314,
+    777
+  ]
+}

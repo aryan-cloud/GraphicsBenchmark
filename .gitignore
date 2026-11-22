@@ -1,0 +1,31 @@
+# Visual Studio local settings and caches
+.vs/
+*.vcxproj.user
+*.suo
+*.VC.db
+*.VC.opendb
+
+# Build directories
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+# Generated compiler, linker, and shader output
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+*.ilk
+*.idb
+*.iobj
+*.ipdb
+*.exp
+*.tlog
+*.cso
+*.bytecode.h
+
+# Default benchmark outputs written at the repository root
+/benchmark*.csv
+/benchmark*.csv.summary.txt

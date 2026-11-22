@@ -16,12 +16,14 @@ namespace
     constexpr wchar_t WindowTitle[] = L"Graphics Benchmark";
     constexpr std::array<float, 4> ClearColor{ 0.04f, 0.18f, 0.32f, 1.0f };
     constexpr UINT MaxFrameCount = 1000000;
+    constexpr UINT MaxDurationSeconds = 600;
 
     struct WindowState
     {
         bool drawable = true;
         bool resizePending = false;
         bool benchmarkActive = false;
+        bool requireForeground = false;
         const char* interruption = nullptr;
         UINT focusEvents = 0;
         UINT activationEvents = 0;
@@ -56,7 +58,8 @@ namespace
     bool ParseArguments(int count, LPWSTR* arguments, Options& options)
     {
         enum Argument { Benchmark = 1, Cubes = 2, VSync = 4, Warmup = 8, Frames = 16, Output = 32,
-            Diagnostics = 64, Mode = 128 };
+            Diagnostics = 64, Mode = 128, Seconds = 256, WarmupSeconds = 512,
+            SampleCapacity = 1024, RequireForeground = 2048 };
         unsigned seen = 0;
         for (int index = 1; index < count; ++index)
         {
@@ -78,6 +81,14 @@ namespace
                 argument = Diagnostics;
             else if (std::wcscmp(flag, L"--mode") == 0)
                 argument = Mode;
+            else if (std::wcscmp(flag, L"--seconds") == 0)
+                argument = Seconds;
+            else if (std::wcscmp(flag, L"--warmup-seconds") == 0)
+                argument = WarmupSeconds;
+            else if (std::wcscmp(flag, L"--sample-capacity") == 0)
+                argument = SampleCapacity;
+            else if (std::wcscmp(flag, L"--require-foreground") == 0)
+                argument = RequireForeground;
             else
                 return false;
 
@@ -92,6 +103,11 @@ namespace
             if (argument == Diagnostics)
             {
                 options.timing.diagnostics = true;
+                continue;
+            }
+            if (argument == RequireForeground)
+            {
+                options.timing.requireForeground = true;
                 continue;
             }
             if (++index == count)
@@ -126,6 +142,20 @@ namespace
                 if (!ParseUnsigned(value, MaxFrameCount, options.timing.frames) || options.timing.frames == 0)
                     return false;
                 break;
+            case Seconds:
+                if (!ParseUnsigned(value, MaxDurationSeconds, options.timing.sampleSeconds) ||
+                    options.timing.sampleSeconds == 0)
+                    return false;
+                break;
+            case WarmupSeconds:
+                if (!ParseUnsigned(value, MaxDurationSeconds, options.timing.warmupSeconds))
+                    return false;
+                break;
+            case SampleCapacity:
+                if (!ParseUnsigned(value, MaxFrameCount, options.timing.sampleCapacity) ||
+                    options.timing.sampleCapacity == 0)
+                    return false;
+                break;
             case Output:
                 if (*value == L'\0' || std::wcsncmp(value, L"--", 2) == 0)
                     return false;
@@ -133,12 +163,18 @@ namespace
                 break;
             case Benchmark:
             case Diagnostics:
+            case RequireForeground:
                 break;
             }
         }
         if (options.timing.diagnostics && (seen & Output) == 0)
             options.timing.output = L"benchmark-diagnostic.csv";
-        return options.benchmark || (seen & (Warmup | Frames | Output | Diagnostics)) == 0;
+        constexpr unsigned durationFlags = Seconds | WarmupSeconds | SampleCapacity;
+        if (!options.benchmark && (seen & (Warmup | Frames | Output | Diagnostics | durationFlags | RequireForeground)))
+            return false;
+        if (options.timing.sampleSeconds != 0)
+            return (seen & (Warmup | Frames | Diagnostics)) == 0;
+        return (seen & durationFlags) == 0;
     }
 
     bool ParseOptions(Options& options)
@@ -202,7 +238,22 @@ namespace
                     ++state->visibilityEvents;
                 else
                     ++state->focusEvents;
+
+                if (state->benchmarkActive && state->requireForeground && state->interruption == nullptr)
+                {
+                    if (message == WM_KILLFOCUS || (message == WM_ACTIVATEAPP && wParam == FALSE))
+                        state->interruption = "focus_lost";
+                    else if (message == WM_SHOWWINDOW && wParam == FALSE)
+                        state->interruption = "window_hidden";
+                }
             }
+            break;
+        }
+        case WM_DISPLAYCHANGE:
+        {
+            auto* state = reinterpret_cast<WindowState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+            if (state != nullptr && state->benchmarkActive && state->interruption == nullptr)
+                state->interruption = "display_changed";
             break;
         }
         case WM_CLOSE:
@@ -261,24 +312,49 @@ namespace
             state.focusEvents, state.activationEvents, state.visibilityEvents };
     }
 
+    LONGLONG ReadQpc()
+    {
+        LARGE_INTEGER counter{};
+        QueryPerformanceCounter(&counter);
+        return counter.QuadPart;
+    }
+
+    const char* PrepareBenchmarkWindow(HWND window, bool requireForeground)
+    {
+        const ULONGLONG deadline = GetTickCount64() + 5000;
+        int exitCode = 0;
+        for (;;)
+        {
+            if (!PumpMessages(exitCode))
+                return "closed";
+            if (!requireForeground || (GetForegroundWindow() == window && GetFocus() == window))
+                return nullptr;
+            if (GetTickCount64() >= deadline)
+                return "foreground_not_acquired";
+            MsgWaitForMultipleObjects(0, nullptr, FALSE, 25, QS_ALLINPUT);
+        }
+    }
+
     int RunBenchmark(HWND window, WindowState& state, DirectX11::Renderer& renderer, const Options& options)
     {
         const auto& frameInfo = renderer.GetFrameInfo();
         const auto& timing = options.timing;
-        std::vector<FrameSample> samples(timing.frames);
+        const bool durationMode = timing.sampleSeconds != 0;
+        const UINT capacity = durationMode ? timing.sampleCapacity : timing.frames;
+        std::vector<FrameSample> samples(capacity);
         std::vector<FrameDiagnostics> diagnostics;
         if (timing.diagnostics)
             diagnostics.resize(timing.warmup + timing.frames);
         UINT diagnosticFrames = 0;
         BenchmarkRun run;
+        run.qpcFrequency = renderer.GetTimingFrequency();
 
         // Initial show/size messages establish the workload before warmup starts.
         int exitCode = 0;
-        if (!PumpMessages(exitCode))
-            run.incompleteReason = "closed";
-        else if (!state.drawable)
+        run.incompleteReason = PrepareBenchmarkWindow(window, timing.requireForeground);
+        if (run.incompleteReason == nullptr && !state.drawable)
             run.incompleteReason = "minimized_or_zero_client_area";
-        else if (state.resizePending)
+        if (run.incompleteReason == nullptr && state.resizePending)
         {
             state.resizePending = false;
             run.result = renderer.Resize();
@@ -291,8 +367,12 @@ namespace
             }
         }
 
-        ULONGLONG sampleStart = 0;
+        const LONGLONG warmupDuration = timing.warmupSeconds * run.qpcFrequency;
+        const LONGLONG sampleDuration = timing.sampleSeconds * run.qpcFrequency;
+        const LONGLONG warmupStart = ReadQpc();
+        LONGLONG sampleStart = 0;
         bool sampling = false;
+        state.requireForeground = timing.requireForeground;
         state.benchmarkActive = true;
         while (run.incompleteReason == nullptr)
         {
@@ -302,16 +382,25 @@ namespace
                 run.incompleteReason = state.interruption != nullptr ? state.interruption : "closed";
                 break;
             }
-            if (run.framesRecorded == timing.frames)
-                break;
+            const LONGLONG now = ReadQpc();
+            const bool finishedWarmup = durationMode ? now - warmupStart >= warmupDuration :
+                run.warmupCompleted == timing.warmup;
+            if (!sampling && finishedWarmup)
+            {
+                run.warmupWallTicks = now - warmupStart;
+                sampleStart = now;
+                sampling = true;
+            }
 
             FrameSample* sample = nullptr;
-            if (run.warmupCompleted == timing.warmup)
+            if (sampling)
             {
-                if (!sampling)
+                if (durationMode ? now - sampleStart >= sampleDuration : run.framesRecorded == timing.frames)
+                    break;
+                if (run.framesRecorded == capacity)
                 {
-                    sampleStart = GetTickCount64();
-                    sampling = true;
+                    run.incompleteReason = "sample_capacity_exhausted";
+                    break;
                 }
                 sample = &samples[run.framesRecorded];
                 sample->frameId = run.warmupCompleted + run.framesRecorded + 1;
@@ -349,8 +438,11 @@ namespace
                 ++run.warmupCompleted;
         }
         state.benchmarkActive = false;
+        const LONGLONG stopped = ReadQpc();
         if (sampling)
-            run.sampleWallMs = GetTickCount64() - sampleStart;
+            run.sampleWallTicks = stopped - sampleStart;
+        else
+            run.warmupWallTicks = stopped - warmupStart;
 
         renderer.FinishTiming();
         const auto presentation = renderer.ReadPresentationInfo();
@@ -441,9 +533,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand)
     {
         const wchar_t* usage = L"Invalid arguments. Usage: Project1.exe [--cubes N] [--vsync 0|1]\n"
             L"    [--mode separate|instanced]\n"
-            L"    [--benchmark [--warmup N] [--frames N] [--output CSV-PATH] [--diagnostics]]\n"
-            L"Cube counts are 1, 100, 1000, and 10000. Warmup ranges from 0 to 1000000.\n"
-            L"Frames range from 1 to 1000000.";
+            L"    [--benchmark [--output CSV-PATH] [--require-foreground]\n"
+            L"        [--warmup N] [--frames N] [--diagnostics]]\n"
+            L"    Duration alternative: --seconds N [--warmup-seconds N] [--sample-capacity N]\n"
+            L"Cube counts are 1, 100, 1000, and 10000. Frame counts have a 1000000 limit.\n"
+            L"Durations use whole seconds (1 to 600 for samples, 0 to 600 for warmup).";
         if (!WriteError(usage))
             MessageBoxW(nullptr, usage, WindowTitle, MB_OK | MB_ICONERROR);
         return 2;

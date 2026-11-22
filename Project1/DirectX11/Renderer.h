@@ -67,6 +67,7 @@ namespace DirectX11
         void FinishTiming();
         PresentationInfo ReadPresentationInfo() const;
         const FrameInfo& GetFrameInfo() const { return frameInfo_; }
+        LONGLONG GetTimingFrequency() const { return qpcFrequency_; }
 
     private:
         struct QuerySet

@@ -31,19 +31,23 @@ The title shows the device's adapter name, the requested cube count, and the act
 Run an optimized benchmark from PowerShell without a debugger. Use `-Wait` to read the exit code and wait for both output files.
 
 ```powershell
-$run = Start-Process .\x64\Release\Project1.exe -Wait -PassThru -ArgumentList '--benchmark --cubes 1000 --mode instanced --vsync 0 --warmup 120 --frames 600 --output benchmark-instanced.csv'
+$run = Start-Process .\x64\Release\Project1.exe -Wait -PassThru -ArgumentList '--benchmark --cubes 1000 --mode instanced --vsync 0 --seconds 10 --warmup-seconds 3 --sample-capacity 100000 --require-foreground --output benchmark-instanced.csv'
 $run.ExitCode
 ```
 
 - `--benchmark` renders the normal scene, finishes automatically, and writes the CSV and its accompanying `<csv-path>.summary.txt` after final query collection. Choose a new output path to keep prior results. Existing files at the selected paths are replaced. Quote a path that contains spaces.
 - For a controlled comparison, hold the cube count, display, back-buffer dimensions, presentation settings, power state, and diagnostics setting constant. Alternate which mode runs first in each repetition. The foreground NVIDIA baseline measured 600 frames in 10.000 seconds at 1280 × 720 with `Present(0, DXGI_PRESENT_ALLOW_TEARING)` on a 60 Hz display. Compare CPU submission and GPU marker intervals separately from observed loop FPS, which can remain display-paced.
 - `--vsync 0|1` sets the `Present` sync interval and defaults to `1` in both modes. When DXGI reports tearing support, the renderer enables it on the two-buffer flip-discard chain and preserves that creation flag on resize. The renderer sets `DXGI_PRESENT_ALLOW_TEARING` only for interval 0 with a tearing-enabled, windowed chain. Other configurations use presentation flags zero. Systems without tearing support keep the windowed flip-discard path with swap-chain flags zero. [Present queue semantics](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present) · [Tearing requirements](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/variable-refresh-rate-displays)
-- `--warmup` accepts 0 through 1,000,000 frames and defaults to 120. `--frames` accepts 1 through 1,000,000 frames and defaults to 600. `--output` defaults to `benchmark.csv`. These three options require `--benchmark`.
-- Once the initial window setup finishes, a resize, minimize, zero-sized client area, or close during warmup or sampling ends the run. Run on the interactive desktop so DXGI can present the window. An occluded presentation ends the run with `incomplete_reason=present_occluded`. The program writes partial results with `completed=false` and the reason. Benchmark interruptions and runtime errors exit with code 1. Invalid arguments exit with code 2. A completed run with both files written exits with code 0. [DXGI status codes](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/dxgi-status)
+- For frame-count runs, `--warmup` accepts 0 through 1,000,000 frames and defaults to 120. `--frames` accepts 1 through 1,000,000 frames and defaults to 600.
+- For duration runs, `--seconds` accepts 1 through 600 whole seconds and `--warmup-seconds` accepts 0 through 600, with a default of 3. Each phase ends at the first frame boundary that reaches its requested duration. `--sample-capacity` sets the preallocated sample limit from 1 through 1,000,000, with a default of 1,000,000. If storage fills before the measurement deadline, the benchmark saves an incomplete result with `incomplete_reason=sample_capacity_exhausted`. Duration options are incompatible with frame-count options and `--diagnostics`.
+- `--output` defaults to `benchmark.csv`. All timing and output options require `--benchmark`. Use `--require-foreground` for controlled runs. It allows up to five seconds to acquire focus before warmup and ends the run if focus is lost or the window is hidden. The guard uses window messages during the run.
+- Once the initial window setup finishes, a resize, minimize, zero-sized client area, display change, or close during warmup or sampling ends the run. Run on the interactive desktop so DXGI can present the window. An occluded presentation ends the run with `incomplete_reason=present_occluded`. The program writes partial results with `completed=false` and the reason. Benchmark interruptions and runtime errors exit with code 1. Invalid arguments exit with code 2. A completed run with both files written exits with code 0. [DXGI status codes](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/dxgi-status)
 
 ### Measurement boundaries
 
-Warmup uses the same scene, back buffers, and presentation interval as sampling. It runs without timing, and the first CSV frame ID is `warmup + 1`. Each CSV row represents a sampled frame whose `Present` returned `S_OK`. An unsuccessful presentation ends the benchmark and its frame stays out of the CSV.
+Warmup uses the same scene, back buffers, and presentation interval as sampling. The benchmark records warmup wall time without per-frame CPU or GPU measurements. The first CSV frame ID is the number of completed warmup frames plus one. Each CSV row represents a sampled frame whose `Present` returned `S_OK`. An unsuccessful presentation ends the benchmark and its frame stays out of the CSV.
+
+Sample wall time uses QPC from the transition to sampling until the benchmark exits the sample loop. This includes message processing, in-loop query polling, and presentation. The summary reports raw QPC ticks, frequency, milliseconds, and observed application loop FPS. Final query collection and result writes follow the wall interval.
 
 | CSV metric | Measured interval |
 | --- | --- |
@@ -59,7 +63,7 @@ CPU and GPU intervals can overlap, so report them separately. GPU timestamps mea
 
 ### Diagnostic runs
 
-Every benchmark summary records the startup tearing support check, swap-chain flags, and the arguments used by `Present`. Add `--diagnostics` when investigating timing anomalies. Its default output is `benchmark-diagnostic.csv`, and it also writes `<csv-path>.diagnostics.csv`. Use a distinct output path for each run.
+Every benchmark summary records the startup tearing support check, swap-chain flags, arguments used by `Present`, and enabled instrumentation. Frame-count validation runs can use `--diagnostics`. Its default output is `benchmark-diagnostic.csv`, and it also writes `<csv-path>.diagnostics.csv`. Duration runs leave submission counting and per-frame window observations off. Use a distinct output path for each run.
 
 The diagnostic CSV has one row per attempted frame, including warmup and any final frame that fails to present. It records actual draw submissions, the arguments and HRESULT for `Present`, query issue and collection slots, the original frame ID saved on the slot, and raw timestamp and disjoint data when available. The per-frame draw count adds instrumentation inside the CPU submission interval. Warmup rows have no GPU queries. For equivalence checks, capture the back buffer and count input-assembler triangles with pipeline statistics in an untimed Debug validation. Each cube contributes 12 input triangles in either mode.
 

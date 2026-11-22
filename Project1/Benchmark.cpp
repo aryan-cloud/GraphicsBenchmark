@@ -136,15 +136,34 @@ bool WriteBenchmarkResults(const BenchmarkOptions& options, const BenchmarkRun& 
         << static_cast<unsigned long>(presentation.descriptionResult) << std::dec << '\n'
         << "tearing_check_hresult=0x" << std::hex
         << static_cast<unsigned long>(presentation.tearingCheckResult) << std::dec << '\n'
-        << "tearing_supported=" << (presentation.tearingSupported ? "true" : "false") << '\n'
-        << "warmup_requested=" << options.warmup << '\n'
+        << "tearing_supported=" << (presentation.tearingSupported ? "true" : "false") << '\n';
+    if (options.sampleSeconds != 0)
+    {
+        summary << "benchmark_mode=duration\n"
+            << "warmup_seconds_requested=" << options.warmupSeconds << '\n'
+            << "sample_seconds_requested=" << options.sampleSeconds << '\n';
+    }
+    else
+    {
+        summary << "benchmark_mode=frames\n"
+            << "warmup_requested=" << options.warmup << '\n'
+            << "samples_requested=" << options.frames << '\n';
+    }
+
+    summary << "sample_capacity=" << samples.size() << '\n'
         << "warmup_completed=" << run.warmupCompleted << '\n'
-        << "samples_requested=" << options.frames << '\n'
+        << "warmup_wall_ms=" << (1000.0 * run.warmupWallTicks / run.qpcFrequency) << '\n'
         << "samples_recorded=" << run.framesRecorded << '\n'
-        << "sample_wall_ms=" << run.sampleWallMs << '\n';
+        << "sample_wall_qpc_ticks=" << run.sampleWallTicks << '\n'
+        << "qpc_frequency_hz=" << run.qpcFrequency << '\n'
+        << "sample_wall_ms=" << (1000.0 * run.sampleWallTicks / run.qpcFrequency) << '\n'
+        << "diagnostics=" << (options.diagnostics ? "true" : "false") << '\n'
+        << "submission_counting=" << (options.diagnostics ? "true" : "false") << '\n'
+        << "window_observations=" << (options.diagnostics ? "true" : "false") << '\n'
+        << "foreground_guard=" << (options.requireForeground ? "true" : "false") << '\n';
     summary << "observed_loop_fps=";
-    if (run.sampleWallMs != 0 && run.framesRecorded != 0)
-        summary << (1000.0 * run.framesRecorded / run.sampleWallMs) << '\n';
+    if (run.sampleWallTicks > 0 && run.framesRecorded != 0)
+        summary << (static_cast<double>(run.qpcFrequency) * run.framesRecorded / run.sampleWallTicks) << '\n';
     else
         summary << "unavailable\n";
     summary << "gpu_valid=" << valid << '\n'
@@ -162,8 +181,7 @@ bool WriteBenchmarkResults(const BenchmarkOptions& options, const BenchmarkRun& 
     }
     if (options.diagnostics)
     {
-        summary << "diagnostics=true\n"
-            << "diagnostics_scope=Counts draw calls in the CPU submission interval. "
+        summary << "diagnostics_scope=Counts draw calls in the CPU submission interval. "
                "Window observations are outside that interval and Present.\n";
     }
 
@@ -194,7 +212,7 @@ bool WriteBenchmarkResults(const BenchmarkOptions& options, const BenchmarkRun& 
         << "gpu_elapsed_scope=Elapsed GPU time from the timestamp before target binding and both clears "
            "to the timestamp after the final draw submission and before Present. "
            "The interval may include idle time and does not measure utilization.\n"
-        << "sample_wall_scope=Wall time from just before the first sampled frame through the final "
+        << "sample_wall_scope=QPC elapsed time from just before the first sampled frame through the final "
            "message and completion check, before final query collection.\n"
         << "percentiles=Median averages the middle pair for even counts. P95 uses nearest rank.\n"
         << "overlap=CPU and GPU intervals can overlap. Their relative durations alone do not identify a bottleneck.\n";

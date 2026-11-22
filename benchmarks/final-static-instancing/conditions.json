@@ -1,0 +1,70 @@
+{
+  "power": [
+    1,
+    0
+  ],
+  "power_fields": [
+    "ACLineStatus",
+    "battery_saver"
+  ],
+  "scheme": "Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)",
+  "adapter": "NVIDIA GeForce RTX 3060 Laptop GPU",
+  "cpu": "AMD Ryzen 7 5800H with Radeon Graphics",
+  "msvc": "v143 14.38.33130",
+  "windows_sdk": "10.0.22621.0",
+  "driver_version": "610.91",
+  "driver_settings_before": {
+    "nvidia_max_frame_rate": "Off",
+    "nvidia_vertical_sync": "unknown",
+    "nvidia_profile_scope": "application match",
+    "nvidia_max_frame_rate_nvapi_status": 0,
+    "nvidia_max_frame_rate_value": "0x00000000",
+    "nvidia_max_frame_rate_location": 0,
+    "nvidia_vertical_sync_nvapi_status": -160
+  },
+  "windows": "Windows-11-10.0.26300-SP0",
+  "release_sha256": "f22f08771d42eea4a0dc1d4e6c4b6e43d42c0a7e9737845151469db0136b52e4",
+  "vsync": 0,
+  "present_flags": 512,
+  "swap_chain_flags": 2048,
+  "diagnostics": false,
+  "sample_capacity": 100000,
+  "warmup_seconds": 3,
+  "measurement_seconds": 10,
+  "client_size": [
+    1280,
+    720
+  ],
+  "repetition_order": [
+    "separate, instanced",
+    "instanced, separate",
+    "separate, instanced"
+  ],
+  "monitor": [
+    "\\\\.\\DISPLAY3",
+    72
+  ],
+  "client_rect": [
+    216,
+    239,
+    1496,
+    959
+  ],
+  "driver_settings_after": {
+    "nvidia_max_frame_rate": "Off",
+    "nvidia_vertical_sync": "unknown",
+    "nvidia_profile_scope": "application match",
+    "nvidia_max_frame_rate_nvapi_status": 0,
+    "nvidia_max_frame_rate_value": "0x00000000",
+    "nvidia_max_frame_rate_location": 0,
+    "nvidia_vertical_sync_nvapi_status": -160
+  },
+  "driver_version_after": "610.91",
+  "driver_global_profile_after": {
+    "nvidia_max_frame_rate": "60 fps",
+    "nvidia_max_frame_rate_nvapi_status": 0,
+    "nvidia_max_frame_rate_value": "0x0000003c",
+    "nvidia_vertical_sync": "unknown",
+    "nvidia_vertical_sync_nvapi_status": -160
+  }
+}

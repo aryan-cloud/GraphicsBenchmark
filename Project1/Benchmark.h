@@ -16,7 +16,11 @@ struct BenchmarkOptions
 {
     UINT warmup = 120;
     UINT frames = 600;
+    UINT warmupSeconds = 3;
+    UINT sampleSeconds = 0;
+    UINT sampleCapacity = 1000000;
     bool diagnostics = false;
+    bool requireForeground = false;
     std::wstring output = L"benchmark.csv";
 };
 
@@ -78,8 +82,10 @@ struct BenchmarkRun
 {
     UINT warmupCompleted = 0;
     UINT framesRecorded = 0;
-    ULONGLONG sampleWallMs = 0;
-    // A null reason means the configured number of frames was completed.
+    LONGLONG qpcFrequency = 0;
+    LONGLONG warmupWallTicks = 0;
+    LONGLONG sampleWallTicks = 0;
+    // A null reason means the configured measurement completed.
     const char* incompleteReason = nullptr;
     HRESULT result = S_OK;
 };
